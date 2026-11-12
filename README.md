@@ -60,6 +60,18 @@ choose ⋮ → **Reconfigure**. Log in again (start the add-on first) or point i
 `keys.json`. The device list is refreshed, and the source address and sequence number
 are kept.
 
+## Groups
+
+Groups made in the L Home app become their own `light.*` entities (one device per
+group). A group gets **one** message sent to its mesh group address (`0xC000`–`0xFEFF`),
+and every member reacts at the same time. If the cloud row has no group address but
+lists the members, the group messages each member in turn instead. After a group
+command, the member lights' assumed state is updated to match. Colour temperature is
+offered only when every member is a CT light.
+
+New or changed groups appear after ⋮ → **Reconfigure**. A group the integration can't
+map is skipped, and a warning in the log names its fields.
+
 ## Source addresses — each sender needs its own
 
 | Sender | Address |

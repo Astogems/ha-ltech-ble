@@ -91,10 +91,43 @@ def _normalize_places(raw_places: list[dict]) -> list[dict]:
             "appkey": p["appkey"].upper(),
             "ivindex": int(p.get("ivindex") or 0),
             "devices": devices,
+            "groups": _normalize_groups(p.get("groups"), devices),
         })
     if not places:
         raise InvalidKeys("no place with netkey/appkey")
     return places
+
+
+def _normalize_groups(raw_groups: list[dict] | None, devices: list[dict]) -> list[dict]:
+    """lhome_client parse_groups() rows -> [{groupid, name, address, members}].
+
+    A group with a mesh group address is sent ONE message to that address.  A group
+    whose address was not found but whose members are known falls back to one message
+    per member (address None).  A group with neither is skipped with a warning that
+    names its fields, so the cloud format can be mapped.
+    """
+    known = {str(d["deviceid"]) for d in devices}
+    groups = []
+    for g in raw_groups or []:
+        if g.get("groupid") in (None, ""):
+            continue
+        members = [m for m in (str(x) for x in g.get("members") or []) if m in known]
+        address = g.get("address")
+        if address is not None:
+            address = int(address)
+        if address is None and not members:
+            _LOGGER.warning(
+                "lhome_ble: skipping group %s (%s): no mesh group address or members found; "
+                "its fields are %s", g.get("name"), g.get("groupid"), g.get("raw_fields"))
+            continue
+        if address is None:
+            _LOGGER.warning(
+                "lhome_ble: group %s has no mesh group address; it will message its %d "
+                "members one by one (fields: %s)", g.get("name"), len(members),
+                g.get("raw_fields"))
+        groups.append({"groupid": str(g["groupid"]), "name": g.get("name"),
+                       "address": address, "members": members})
+    return groups
 
 
 def _load_places(path: str) -> list[dict]:

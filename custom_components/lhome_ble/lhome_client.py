@@ -191,7 +191,120 @@ class LHome:
             "meshuuid": pick(meta, "meshuuid"),
             "provisioneraddress": pick(detail, "provisioneraddress"),
             "devices": devices,
+            "groups": parse_groups(info.get("groups") if isinstance(info, dict) else None),
         }
+
+
+# ---- groups -----------------------------------------------------------------
+# A group made in the L Home app is a Bluetooth-Mesh group address (0xC000-0xFEFF)
+# that the member lights subscribe to: one message, every member reacts at once.
+# Seen in placeinfo (2026-11): the address is `index` as a hex string ("c002") and
+# the members are `devices: [{deviceid, devicename}]`.  Other likely names are kept
+# as fallbacks in case another app version differs.  (`groupindex` is a sort order,
+# not the address.)
+
+GROUP_ADDR_MIN, GROUP_ADDR_MAX = 0xC000, 0xFEFF
+
+_GROUP_ADDR_NAMES = ("index", "groupAddress", "groupaddress", "groupAddr", "groupaddr",
+                     "meshGroupAddress", "meshgroupaddress", "meshaddress", "meshAddress",
+                     "address", "groupMeshAddress", "subscriptionAddress")
+_GROUP_MEMBER_NAMES = ("devices", "devicelist", "deviceList", "groupdevices", "groupDevices",
+                       "deviceids", "deviceIds", "deviceidlist", "children", "rows")
+
+
+def _as_group_addr(v: Any) -> Optional[int]:
+    """2-byte group address from a decimal int/str (cloud style) or a hex str ('C001', '0xC001')."""
+    cand = []
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        cand = [v]
+    elif isinstance(v, str) and v.strip():
+        s = v.strip().lower()
+        if s.startswith("0x"):
+            cand = [_int_or_none(s[2:], 16)]
+        else:
+            cand = [_int_or_none(s, 10), _int_or_none(s, 16)]
+    for c in cand:
+        if c is not None and GROUP_ADDR_MIN <= c <= GROUP_ADDR_MAX:
+            return c
+    return None
+
+
+def _int_or_none(s: str, base: int) -> Optional[int]:
+    try:
+        return int(s, base)
+    except ValueError:
+        return None
+
+
+def _json_obj(v: Any) -> dict:
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str) and v.strip().startswith("{"):
+        try:
+            obj = json.loads(v)
+        except ValueError:
+            return {}
+        return obj if isinstance(obj, dict) else {}
+    return {}
+
+
+def _find_group_addr(*objs: dict) -> Optional[int]:
+    for obj in objs:                       # 1) known names
+        for n in _GROUP_ADDR_NAMES:
+            if (a := _as_group_addr(obj.get(n))) is not None:
+                return a
+    for obj in objs:                       # 2) any other *addr* field holding a group address
+        for k, v in obj.items():
+            if "addr" in k.lower() and (a := _as_group_addr(v)) is not None:
+                return a
+    return None
+
+
+def _member_ids(*objs: dict) -> list:
+    for obj in objs:
+        for n in _GROUP_MEMBER_NAMES:
+            v = obj.get(n)
+            if isinstance(v, dict):
+                v = v.get("rows")
+            if isinstance(v, str):
+                v = [x for x in v.replace(";", ",").split(",") if x.strip()]
+            if not isinstance(v, list) or not v:
+                continue
+            ids = []
+            for m in v:
+                if isinstance(m, dict):
+                    m = m.get("deviceid") or m.get("deviceId") or m.get("areadeviceid")
+                if m not in (None, ""):
+                    ids.append(str(m).strip())
+            if ids:
+                return ids
+    return []
+
+
+def parse_groups(container: Any) -> list[dict]:
+    """placeinfo["groups"] ({"rows": [...]} or a list) -> [{groupid, name, address, members}].
+
+    `address` is the mesh group address (int) or None if it could not be found;
+    `members` is a list of deviceid strings (may be empty if the cloud row has none).
+    `raw_fields` lists the row's field names, to help map the format if needed.
+    """
+    rows = container.get("rows", []) if isinstance(container, dict) else container
+    groups = []
+    for g in rows or []:
+        if not isinstance(g, dict):
+            continue
+        objs = [g] + [_json_obj(g.get(k)) for k in ("param", "paramext", "ext", "extend")]
+        objs = [o for o in objs if o]
+        groups.append({
+            "groupid": g.get("groupid") or g.get("groupId") or g.get("id"),
+            "name": g.get("groupname") or g.get("groupName") or g.get("name"),
+            "address": _find_group_addr(*objs),
+            "members": _member_ids(*objs),
+            "raw_fields": sorted({k for o in objs for k in o}),
+        })
+    return groups
 
 
 def _result_data(resp: dict, key: bytes) -> Any:

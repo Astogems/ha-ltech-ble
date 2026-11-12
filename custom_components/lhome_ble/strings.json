@@ -11,7 +11,7 @@
       },
       "reconfigure": {
         "title": "Refresh lights",
-        "description": "Re-fetch the device list after adding or renaming lights in the L Home app. The mesh source address and sequence number are kept.",
+        "description": "Re-fetch the device and group list after adding or renaming lights or groups in the L Home app. The mesh source address and sequence number are kept.",
         "menu_options": {
           "login": "Log in with my L Home account (signer add-on)",
           "keys_file": "Use a keys.json file"
