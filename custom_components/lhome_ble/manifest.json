@@ -1,0 +1,19 @@
+{
+  "domain": "lhome_ble",
+  "name": "CtrlSpace X LTech BLE Integration",
+  "codeowners": [
+    "@Astogems"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://github.com/Astogems/ha-ltech-ble",
+  "integration_type": "hub",
+  "iot_class": "assumed_state",
+  "issue_tracker": "https://github.com/Astogems/ha-ltech-ble/issues",
+  "requirements": [
+    "pycryptodome>=3.20"
+  ],
+  "version": "0.2.7"
+}

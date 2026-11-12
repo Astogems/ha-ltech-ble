@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CtrlSpace X LTech BLE Integration",
+        "description": "The mesh keys and device list are fetched once; after that the lights are controlled locally over Bluetooth.",
+        "menu_options": {
+          "login": "Log in with my L Home account (signer add-on)",
+          "keys_file": "Use a keys.json file"
+        }
+      },
+      "reconfigure": {
+        "title": "Refresh lights",
+        "description": "Re-fetch the device list after adding or renaming lights in the L Home app. The mesh source address and sequence number are kept.",
+        "menu_options": {
+          "login": "Log in with my L Home account (signer add-on)",
+          "keys_file": "Use a keys.json file"
+        }
+      },
+      "login": {
+        "title": "L Home account",
+        "description": "Used once to read your mesh keys and lights. The password is not stored. The signer add-on must be running.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "signer_url": "Signer add-on URL",
+          "pwd_is_md5": "Send the password as MD5",
+          "src_address": "Mesh source address for Home Assistant (hex)"
+        },
+        "data_description": {
+          "signer_url": "On HA OS the add-on is usually reachable at http://127.0.0.1:8777/sign; otherwise use http://<HA-host-LAN-IP>:8777/sign.",
+          "src_address": "Must be unique on the mesh: not the L Home phone (0001), a light, nRF Mesh (7F00-7FFF) or the PC test script (7E10)."
+        }
+      },
+      "keys_file": {
+        "title": "keys.json",
+        "description": "Copy keys.json (from lhome_client.py --export) into your Home Assistant config folder.",
+        "data": {
+          "keys_path": "keys.json path (relative to the config folder)",
+          "src_address": "Mesh source address for Home Assistant (hex)"
+        },
+        "data_description": {
+          "src_address": "Must be unique on the mesh: not the L Home phone (0001), a light, nRF Mesh (7F00-7FFF) or the PC test script (7E10)."
+        }
+      },
+      "place": {
+        "title": "Choose a home",
+        "data": {
+          "place": "Home"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the signer add-on or the L Home cloud (see the log)",
+      "invalid_auth": "L Home rejected the login (check email/password, or try MD5)",
+      "no_places": "The account has no home with mesh keys",
+      "unknown": "Unexpected error (see the log)",
+      "file_not_found": "File not found in the config folder",
+      "invalid_keys": "Not a keys.json export with netkey/appkey (see the log)",
+      "invalid_src": "Enter a hex unicast address between 0001 and 7FFF",
+      "src_conflict": "That address belongs to the L Home phone or a light"
+    },
+    "abort": {
+      "already_configured": "This home is already set up",
+      "reconfigure_successful": "Lights refreshed",
+      "wrong_place": "That is a different home from the one this entry controls"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Connection",
+        "description": "The light accepts only one Bluetooth connection at a time. While Home Assistant holds it, the L Home app cannot connect. A short time keeps the L Home app usable; a longer time makes repeated Home Assistant commands faster (no reconnect).",
+        "data": {
+          "idle_disconnect": "Release the light after this many idle seconds"
+        },
+        "data_description": {
+          "idle_disconnect": "2-600 seconds. Default 10."
+        }
+      }
+    }
+  }
+}

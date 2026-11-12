@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+keys.json
+*keys*.json
+secrets.yaml
+*.so

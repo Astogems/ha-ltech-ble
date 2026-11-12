@@ -1,0 +1,33 @@
+# ESPHome Bluetooth proxy for the L Home BLE Mesh integration.
+# Any ESP32 (not S2) works; place it within a few metres of at least one light.
+# Flash from the ESPHome dashboard (HA add-on) or `esphome run lhome-bt-proxy.yaml`.
+# Needs secrets.yaml with wifi_ssid / wifi_password / api_key (32-byte base64).
+
+esphome:
+  name: lhome-bt-proxy
+  friendly_name: L Home BT Proxy
+
+esp32:
+  board: esp32dev          # change to your board
+  framework:
+    type: esp-idf          # recommended for Bluetooth proxy (more connection slots, stabler)
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: true           # needed to see the lights' 0x1828 service data
+
+bluetooth_proxy:
+  active: true             # active = HA can open GATT connections (required to send commands)
