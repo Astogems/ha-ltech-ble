@@ -28,7 +28,22 @@ as it has `bluetooth_proxy: active: true`. A Bluetooth adapter on the HA host al
 
 **Manually:** copy `custom_components/lhome_ble/` to HA's `/config/custom_components/lhome_ble/`, then do step 3 above.
 
-**Setup:**
+## 3. L Home Signer add-on (only for the account login)
+
+Skip this if you set up from a `keys.json` file. HACS can't install add-ons; use the
+Add-on Store instead:
+
+1. Settings → Add-ons → **Add-on Store** → ⋮ → **Repositories** → add
+   `https://github.com/Astogems/ha-ltech-ble`.
+2. Install **L Home Signer** (the first build takes a few minutes).
+3. The add-on does **not** include LTECH's native library. Take
+   `lib/arm64-v8a/libmedia_pipeline.so` from the L Home APK and copy it to
+   `/share/lhome_signer/libmedia_pipeline.so`.
+4. Start the add-on. Its log should show `[signer] listening on ...`.
+
+Details: [`lhome_signer/DOCS.md`](lhome_signer/DOCS.md).
+
+## 4. Set up
 
 1. Choose how to get the keys (one time):
    - **Log in with my L Home account.** Start the *L Home Signer* add-on, then enter your

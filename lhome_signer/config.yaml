@@ -1,0 +1,25 @@
+name: L Home Signer
+version: "1.1.0"
+slug: lhome_signer
+description: >-
+  Signs L Home (ltech smarthome) API requests by running the app's own native
+  library under unidbg. Needed once to set up the CtrlSpace X LTech BLE integration.
+url: https://github.com/Astogems/ha-ltech-ble
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: services
+boot: manual
+init: false
+# The native library is NOT shipped with this add-on. Put your own copy at
+#   /share/lhome_signer/libmedia_pipeline.so
+map:
+  - type: share
+    read_only: true
+# Published on the host so the HA integration can reach it at
+#   http://127.0.0.1:8777/sign  (HA OS)  or  http://<HA-host-LAN-IP>:8777/sign
+ports:
+  8777/tcp: 8777
+ports_description:
+  8777/tcp: Signer HTTP API (keep on a trusted LAN only)
