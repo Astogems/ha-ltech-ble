@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_IDLE_DISCONNECT, CONF_PLACE, CONF_SRC, IDLE_DISCONNECT_SECONDS
+from .const import CONF_PLACE, CONF_SRC, idle_seconds
 from .mesh import MeshNetwork
 from .proxy import MeshProxyLink
 
@@ -27,8 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     net = MeshNetwork(place["netkey"], place["appkey"],
                       int(place.get("ivindex") or 0), int(entry.data[CONF_SRC], 16))
     macs = [format_mac(d["mac"]) for d in place["devices"] if d.get("mac")]
-    idle = entry.options.get(CONF_IDLE_DISCONNECT, IDLE_DISCONNECT_SECONDS)
-    link = MeshProxyLink(hass, net, macs, entry.title, idle_seconds=idle)
+    link = MeshProxyLink(hass, net, macs, entry.title,
+                         idle_seconds=idle_seconds(entry.options))
     await link.async_setup()
     entry.runtime_data = link
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

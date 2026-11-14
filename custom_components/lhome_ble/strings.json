@@ -70,14 +70,17 @@
     "step": {
       "init": {
         "title": "Connection",
-        "description": "The light accepts only one Bluetooth connection at a time. While Home Assistant holds it, the L Home app cannot connect. A short time keeps the L Home app usable; a longer time makes repeated Home Assistant commands faster (no reconnect).",
+        "description": "Each light accepts only one Bluetooth connection at a time. While Home Assistant holds a light, the L Home app cannot connect to that light. A short time keeps the L Home app usable; a longer time makes repeated Home Assistant commands faster (no reconnect). With 2 or more lights you can set 0 to keep Home Assistant connected to one light all the time (fastest commands, reconnects by itself); the L Home app then uses another light.",
         "data": {
-          "idle_disconnect": "Release the light after this many idle seconds"
+          "idle_disconnect": "Release the light after this many idle seconds (0 = stay connected)"
         },
         "data_description": {
-          "idle_disconnect": "2-600 seconds. Default 10."
+          "idle_disconnect": "0, or 10-600 seconds. Default 10. 0 keeps one light connected permanently and uses one connection slot of the ESPHome Bluetooth proxy."
         }
       }
+    },
+    "error": {
+      "idle_range": "Enter 0 (stay connected) or 10-600 seconds"
     }
   }
 }

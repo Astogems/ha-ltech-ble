@@ -3,6 +3,13 @@
 Any light that is a Mesh Proxy node relays our network PDUs to the rest of the
 mesh, so one connection (through an ESPHome Bluetooth proxy or a local adapter)
 controls all lights.
+
+Two modes:
+- idle release (default): connect on the first command, drop the connection after
+  `idle_seconds` without commands so the L Home app can reach that light again.
+- keep connected (`idle_seconds` == 0): connect at startup and stay connected; when
+  the link drops (light power-cycled, proxy rebooted, out of range) reconnect in the
+  background to whichever light of the mesh is reachable.
 """
 from __future__ import annotations
 
@@ -14,6 +21,12 @@ from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from homeassistant.components import bluetooth
+from homeassistant.components.bluetooth import (
+    BluetoothCallbackMatcher,
+    BluetoothChange,
+    BluetoothScanningMode,
+    BluetoothServiceInfoBleak,
+)
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
@@ -23,6 +36,9 @@ from .const import (
     BEACON_WAIT_SECONDS,
     DOMAIN,
     IDLE_DISCONNECT_SECONDS,
+    KEEP_CONNECTED,
+    RECONNECT_MAX_SECONDS,
+    RECONNECT_MIN_SECONDS,
     SEND_TIMEOUT_SECONDS,
     SEQ_RESERVE,
 )
@@ -42,7 +58,7 @@ _INTER_MESSAGE_DELAY = 0.05
 
 
 class MeshProxyLink:
-    """Owns the sequence number and the (lazy, idle-timed) proxy connection."""
+    """Owns the sequence number and the proxy connection (idle-timed or kept open)."""
 
     def __init__(self, hass: HomeAssistant, net: MeshNetwork, macs: list[str], name: str,
                  idle_seconds: float = IDLE_DISCONNECT_SECONDS) -> None:
@@ -54,6 +70,11 @@ class MeshProxyLink:
         self._lock = asyncio.Lock()
         self._client: BleakClientWithServiceCache | None = None
         self._idle_unsub: CALLBACK_TYPE | None = None
+        self._keep_connected = idle_seconds == KEEP_CONNECTED
+        self._keeper: asyncio.Task | None = None
+        self._adv_unsub: CALLBACK_TYPE | None = None
+        # set whenever the keeper should look at the link again (dropped / light seen)
+        self._wake = asyncio.Event()
         # keyed by network + src, not by config entry: re-adding the integration
         # with the same src must continue the sequence, never restart it
         self._store: Store[dict] = Store(
@@ -72,14 +93,34 @@ class MeshProxyLink:
             _LOGGER.info("%s: using IV index %d learned from the lights (keys say %d)",
                          self._name, data["ivindex"], self.net.ivindex)
             self.net.ivindex = int(data["ivindex"])
-        _LOGGER.info("%s: mesh src 0x%04X, next seq %d, IV index %d, Network ID %s", self._name,
-                     self.net.src, self._seq, self.net.ivindex, self.net.network_id.hex().upper())
+        _LOGGER.info("%s: mesh src 0x%04X, next seq %d, IV index %d, Network ID %s, %s",
+                     self._name, self.net.src, self._seq, self.net.ivindex,
+                     self.net.network_id.hex().upper(),
+                     "keep connected" if self._keep_connected
+                     else f"release after {self._idle_seconds}s idle")
+        if self._keep_connected:
+            self._adv_unsub = bluetooth.async_register_callback(
+                self.hass, self._on_advertisement,
+                BluetoothCallbackMatcher(service_uuid=MESH_PROXY_SERVICE_UUID, connectable=True),
+                BluetoothScanningMode.PASSIVE)
+            self._keeper = self.hass.async_create_background_task(
+                self._async_keep_connected(), f"{DOMAIN} keep connected {self._name}")
 
     async def _async_save(self) -> None:
         await self._store.async_save({"next": self._reserved, "ivindex": self.net.ivindex})
 
     async def async_shutdown(self) -> None:
         self._cancel_idle()
+        if self._adv_unsub is not None:
+            self._adv_unsub()
+            self._adv_unsub = None
+        if self._keeper is not None:
+            self._keeper.cancel()
+            try:
+                await self._keeper
+            except asyncio.CancelledError:
+                pass
+            self._keeper = None
         await self._disconnect()
 
     # ---- sequence numbers --------------------------------------------------
@@ -111,7 +152,7 @@ class MeshProxyLink:
         return best.device if best else None
 
     async def _ensure_connected(self) -> BleakClientWithServiceCache:
-        if self._client is not None and self._client.is_connected:
+        if self._connected:
             return self._client
         device = self._find_device()
         if device is None:
@@ -163,18 +204,75 @@ class MeshProxyLink:
             self.hass.async_create_task(self._async_save())
         self._iv_confirmed.set()
 
+    @property
+    def _connected(self) -> bool:
+        return self._client is not None and self._client.is_connected
+
     @callback
-    def _on_disconnected(self, _client) -> None:
+    def _on_disconnected(self, client) -> None:
         _LOGGER.debug("%s: mesh proxy disconnected", self._name)
-        self._client = None
+        # a late callback from an old connection must not drop the current one
+        if self._client is None or self._client is client:
+            self._client = None
+        self._wake.set()
 
     async def _disconnect(self) -> None:
         client, self._client = self._client, None
+        self._wake.set()  # keep-connected mode: reconnect (not every backend calls back)
         if client is not None:
             try:
                 await client.disconnect()
             except BleakError:
                 pass
+
+    # ---- keep connected -----------------------------------------------------
+
+    @callback
+    def _on_advertisement(self, info: BluetoothServiceInfoBleak, _change: BluetoothChange) -> None:
+        """A light of our mesh is advertising, so it is free: reconnect now if we are down."""
+        if self._connected:
+            return
+        netid_adv = b"\x00" + self.net.network_id
+        if (info.address.upper() in self._macs
+                or info.service_data.get(MESH_PROXY_SERVICE_UUID, b"").startswith(netid_adv)):
+            self._wake.set()
+
+    async def _async_keep_connected(self) -> None:
+        """Background task: hold one proxy connection open for as long as the entry runs."""
+        backoff = RECONNECT_MIN_SECONDS
+        was_up = False
+        while True:
+            self._wake.clear()
+            if self._connected:
+                was_up = True
+                await self._wake.wait()  # the disconnect callback wakes us
+                continue
+            if was_up:
+                _LOGGER.info("%s: connection to the mesh lost, reconnecting", self._name)
+                was_up = False
+            try:
+                async with self._lock:
+                    if not self._connected:
+                        async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                            await self._ensure_connected()
+                        _LOGGER.info("%s: connected to %s, staying connected", self._name,
+                                     self._client.address if self._client else "?")
+                backoff = RECONNECT_MIN_SECONDS
+                continue
+            except (BleakError, TimeoutError, HomeAssistantError) as err:
+                await self._disconnect()
+                _LOGGER.debug("%s: keep-connected attempt failed (%r); retrying within %ss",
+                              self._name, err, backoff)
+            # never retry faster than the minimum, then wait out the rest of the backoff
+            # unless a light of the mesh shows up advertising (= free to connect)
+            await asyncio.sleep(RECONNECT_MIN_SECONDS)
+            self._wake.clear()
+            try:
+                async with asyncio.timeout(backoff - RECONNECT_MIN_SECONDS):
+                    await self._wake.wait()
+            except TimeoutError:
+                pass
+            backoff = min(backoff * 2, RECONNECT_MAX_SECONDS)
 
     # ---- idle disconnect ----------------------------------------------------
 
@@ -187,6 +285,8 @@ class MeshProxyLink:
     @callback
     def _schedule_idle(self) -> None:
         self._cancel_idle()
+        if self._keep_connected:
+            return
 
         @callback
         def _idle(_now) -> None:
@@ -216,7 +316,7 @@ class MeshProxyLink:
             for attempt in (1, 2):
                 # retry only when an existing connection went stale; a fresh connect
                 # that fails (light busy / out of range) fails the action right away
-                reused = self._client is not None and self._client.is_connected
+                reused = self._connected
                 try:
                     async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
                         client = await self._ensure_connected()

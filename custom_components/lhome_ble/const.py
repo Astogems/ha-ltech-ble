@@ -24,14 +24,34 @@ PHONE_SRC = 0x0001
 # never reuses a seq (the lights drop any seq <= the last one seen from our src).
 SEQ_RESERVE = 256
 
-# Drop the GATT connection after this long without commands.  The light accepts ONE
-# connection at a time, so while HA holds it the L Home app cannot connect.  Short =
-# app stays usable; long = faster HA commands (no reconnect).  The minimum covers the
-# 0.6 s gap between power-on and brightness/CT, which must share one connection.
+# Drop the GATT connection after this long without commands.  A light accepts ONE
+# connection at a time, so while HA holds it the L Home app cannot connect to THAT
+# light.  Short = app stays usable; long = faster HA commands (no reconnect).
+# 0 = never release: HA stays connected to one light and reconnects by itself when
+# the link drops.  Only sensible with 2+ lights, so the app can use another one.
 CONF_IDLE_DISCONNECT = "idle_disconnect"
 IDLE_DISCONNECT_SECONDS = 10
-IDLE_DISCONNECT_MIN = 2
+IDLE_DISCONNECT_MIN = 10
 IDLE_DISCONNECT_MAX = 600
+KEEP_CONNECTED = 0
+
+# Keep-connected mode: retry a failed (re)connect after this long, doubling up to
+# the maximum.  A light of this mesh starting to advertise again cuts the wait short,
+# but never below the minimum (a light that advertises yet refuses connections, or a
+# proxy with no free slot, must not cause a tight retry loop).
+RECONNECT_MIN_SECONDS = 5
+RECONNECT_MAX_SECONDS = 60
+
+
+def idle_seconds(options) -> int:
+    """The idle-release option: 0 (keep connected) or MIN..MAX seconds.
+
+    Older versions allowed 2-9 s; those are raised to the new minimum.
+    """
+    value = int(options.get(CONF_IDLE_DISCONNECT, IDLE_DISCONNECT_SECONDS))
+    if value == KEEP_CONNECTED:
+        return KEEP_CONNECTED
+    return min(max(value, IDLE_DISCONNECT_MIN), IDLE_DISCONNECT_MAX)
 
 # After power-on the light fades to its stored level; brightness/CT sent during
 # that fade is overridden, so wait this long before sending them.

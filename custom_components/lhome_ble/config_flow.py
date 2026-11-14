@@ -40,8 +40,9 @@ from .const import (
     DOMAIN,
     IDLE_DISCONNECT_MAX,
     IDLE_DISCONNECT_MIN,
-    IDLE_DISCONNECT_SECONDS,
+    KEEP_CONNECTED,
     PHONE_SRC,
+    idle_seconds,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -169,17 +170,22 @@ def _parse_src(text: str) -> int:
 
 
 class LHomeBleOptionsFlow(OptionsFlow):
-    """How long HA keeps the light's single BLE connection after a command."""
+    """How long HA keeps the light's single BLE connection after a command (0 = forever)."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        current = self.config_entry.options.get(CONF_IDLE_DISCONNECT, IDLE_DISCONNECT_SECONDS)
+            # 0 or MIN..MAX; checked here because vol.Any doesn't render as a form field
+            if KEEP_CONNECTED < user_input[CONF_IDLE_DISCONNECT] < IDLE_DISCONNECT_MIN:
+                errors[CONF_IDLE_DISCONNECT] = "idle_range"
+            else:
+                return self.async_create_entry(data=user_input)
+        current = idle_seconds(self.config_entry.options)
         schema = vol.Schema({
             vol.Required(CONF_IDLE_DISCONNECT, default=current): vol.All(
-                vol.Coerce(int), vol.Range(min=IDLE_DISCONNECT_MIN, max=IDLE_DISCONNECT_MAX)),
+                vol.Coerce(int), vol.Range(min=KEEP_CONNECTED, max=IDLE_DISCONNECT_MAX)),
         })
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
 
 class LHomeBleConfigFlow(ConfigFlow, domain=DOMAIN):

@@ -93,8 +93,12 @@ accepted from that address, so two senders must never share an address.
   re-export keys (and update `ivindex`) or commands will be ignored.
 - **CT lights only** are mapped (colour temperature `D5 <cool><warm>`). Lights
   without `minkelvin/maxkelvin` get on/off + brightness only; RGB is not mapped.
-- The GATT connection to the proxy is dropped after 120 s idle, to free the ESPHome
-  slot. The first command after that takes about 1–3 s while it reconnects.
+- The GATT connection to the proxy is dropped after 10 s idle by default (Configure:
+  0 or 10–600 s), to free the light for the L Home app and the ESPHome slot. The first
+  command after that takes about 1–3 s while it reconnects.
+- **Keep connected (0):** with two or more lights, set the idle time to 0. HA then
+  stays connected to one light (instant commands) and reconnects on its own if the
+  link drops; the L Home app uses another light. It holds one ESPHome proxy slot.
 
 ## Troubleshooting
 
